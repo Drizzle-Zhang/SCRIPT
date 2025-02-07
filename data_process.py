@@ -22,6 +22,7 @@ import sklearn
 from statsmodels.distributions.empirical_distribution import ECDF
 import pickle
 import random
+import cosg
 
 
 def tfidf(X: Union[np.ndarray, sparse.spmatrix]) -> Union[np.ndarray, sparse.spmatrix]:
@@ -410,39 +411,6 @@ class ATACDataset(object):
 
         return
 
-    def add_eqtl(self, file_eqtl: str):
-        file_eqtl_peaks = os.path.join(self.path_process, 'peaks_eQTL.bed')
-        os.system(f"{self.bedtools} intersect -a {self.file_peaks_sort} -b {file_eqtl} -wao "
-                  f"> {file_eqtl_peaks}")
-        list_dict_eqtl = []
-        with open(file_eqtl_peaks, 'r') as r_po:
-            for line in r_po:
-                list_line = line.strip().split('\t')
-                peak = list_line[3]
-                gene_symbol = list_line[8]
-                if gene_symbol in self.all_promoter_genes:
-                    list_dict_eqtl.append({"region1": gene_symbol, "region2": peak})
-        df_eqtl = pd.DataFrame(list_dict_eqtl)
-        df_eqtl = df_eqtl.drop_duplicates()
-        df_eqtl['type'] = ['eQTL']*df_eqtl.shape[0]
-        self.df_eqtl = df_eqtl
-        set_gene = set(self.df_rna.columns)
-        self.df_eqtl = \
-            self.df_eqtl.loc[self.df_eqtl["region1"].apply(lambda x: x in set_gene), :]
-        self.df_graph = pd.concat([self.df_graph, self.df_eqtl], axis=0)
-        self.df_graph = self.df_graph.drop_duplicates(subset=["region1", "region2"], keep='first')
-
-    def build_tf_graph(self, file_tf: str):
-        df_tf = pd.read_csv(file_tf, sep='\t', header=None)
-        df_tf = df_tf.iloc[:, :2]
-        df_tf.columns = ['TF', 'TargetGene']
-        set_gene = set(self.df_rna.columns).intersection(self.all_promoter_genes)
-        df_tf = df_tf.loc[df_tf.apply(
-            lambda x: x.iloc[0] in set_gene and x.iloc[1] in set_gene, axis=1), :]
-        df_tf_self = pd.DataFrame({'TF': sorted(list(set_gene)),
-                                   'TargetGene': sorted(list(set_gene))})
-        self.df_tf = pd.concat([df_tf_self, df_tf], axis=0)
-
     def generate_data_tensor(self):
         graph_data = self.df_graph
         df_graph_all = graph_data
@@ -535,6 +503,40 @@ class ATACDataset(object):
         return
 
 
+def process_rna(file_rna, num_gene_percelltype):
+    adata_rna = sc.read_h5ad(file_rna)
+    # protein coding gene
+    basepath = os.path.abspath(__file__)
+    folder = os.path.dirname(basepath)
+    file_gene_hg38 = os.path.join(folder, 'data/genes.protein.tss.tsv')
+    df_gene_hg38 = pd.read_csv(file_gene_hg38, sep='\t', header=None)
+    pretein_genes = df_gene_hg38.iloc[:, 2]
+    sel_pretein_genes = sorted(list(set(pretein_genes.tolist()).intersection(adata_rna.var.index)))
+    adata_rna_cosg = adata_rna[:, sel_pretein_genes].copy()
+    # find marker genes
+    cosg.cosg(adata_rna_cosg,
+              key_added='cosg',
+              mu=1,
+              remove_lowly_expressed=True,
+              expressed_pct=0.2,
+              n_genes_user=num_gene_percelltype,
+              use_raw=True,
+              groupby='celltype')
+    cosg_genes = []
+    for i in range(adata_rna_cosg.uns['cosg']['names'].shape[0]):
+        cosg_genes.extend(list(adata_rna_cosg.uns['cosg']['names'][i]))
+    cosg_genes = list(set(cosg_genes))
+    adata_rna = adata_rna[:, cosg_genes]
+    df_rna = pd.DataFrame(adata_rna.X.toarray(),
+                          index=adata_rna.obs.index, columns=adata_rna.var.index)
+    df_rna_cell = df_rna
+    df_rna_cell['celltype'] = adata_rna.obs.loc[:, 'celltype']
+    df_rna_cell = df_rna_cell.groupby('celltype').apply(lambda x: x.sum())
+    df_rna_celltype = df_rna_cell.iloc[:, :-1]
+
+    return df_rna_celltype
+
+
 def prepare_model_input(path_data_root: str, file_atac: str, df_rna_celltype: DataFrame,
                         min_features: Optional[float] = None, max_features: Optional[float] = None,
                         min_percent: Optional[float] = 0.05,
@@ -576,8 +578,6 @@ def prepare_model_input(path_data_root: str, file_atac: str, df_rna_celltype: Da
     # Hi-C
     path_hic = os.path.join(folder, 'data')
     dataset_ATAC.build_graph(path_hic, sel_interaction='ALL')
-    dataset_ATAC.add_eqtl(
-        os.path.join(folder, 'data/all_tissue_SNP_Gene.txt'))
 
     dataset_ATAC.generate_data_tensor()
 

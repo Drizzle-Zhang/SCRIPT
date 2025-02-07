@@ -1,13 +1,6 @@
 import os
 from time import time
-
-import pandas as pd
-import scanpy as sc
-import pickle
-
-from data_process import prepare_model_input
-
-num_gene_percelltype = 300
+from data_process import prepare_model_input, process_rna
 
 
 def generate_data(
@@ -19,11 +12,13 @@ def generate_data(
         min_features=0,
         max_features=10e8,
         min_percent=0,
+        num_gene=300
 ):
     # cortex
     time_start = time()
 
-    df_rna_cortex = pd.read_csv(file_rna, sep='\t', index_col=0)
+    # df_rna_cortex = pd.read_csv(file_rna, sep='\t', index_col=0)
+    df_rna_cortex = process_rna(file_rna, num_gene)
 
     cell_aggregation = True if cell_aggregation > 0 else False
     hg19_to_hg38 = True if hg19_to_hg38 > 0 else False
@@ -56,6 +51,7 @@ if __name__ == '__main__':
     parser.add_argument("--min_features", type=int, default=-1, help="min number of features (For QC)")
     parser.add_argument("--max_features", type=int, default=-1, help="max number of features (For QC)")
     parser.add_argument("--min_percent", type=float, default=0.05, help="min percent of features (For QC)")
+    parser.add_argument("--num_gene", type=int, default=300, help="number of marker genes per cell type")
     args = parser.parse_args()
     generate_data(
         file_atac=args.file_atac,
@@ -65,5 +61,6 @@ if __name__ == '__main__':
         hg19_to_hg38=args.hg19tohg38,
         min_features=args.min_features,
         max_features=args.max_features,
-        min_percent=args.min_percent
+        min_percent=args.min_percent,
+        num_gene=args.num_gene
     )

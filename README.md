@@ -20,6 +20,12 @@ pip install dgl -f https://data.dgl.ai/wheels/torch-2.2/cu121/repo.html
 pip install -r requirements.txt
 ```
 
+To extract the compressed files needed for the model:
+
+```shell
+gzip -d ./data/PO.txt.gz
+```
+
 ## Tutorial
 
 #### **Running SCRIPT in One Command**

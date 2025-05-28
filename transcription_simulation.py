@@ -42,9 +42,13 @@ class FinetuneTrainerLabel(TrainerBase):
             pretrain_file_name=None,
             large_emb_init=True,
             lambda_loss=1,
-            label_loss=True
+            label_loss=True,
+            folder_ckpt=None
     ):
-        super().__init__(f"{int(time.time())}")
+        if folder_ckpt is None:
+            super().__init__(f"{int(time.time())}")
+        else:
+            super().__init__(f"{folder_ckpt}")
         self.dataset = dataset
         self.in_dim = 1
         self.hidden_size = hidden_size
@@ -281,6 +285,7 @@ class FinetuneTrainerLabel(TrainerBase):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--path_in", type=str, help="The result path of training data generation")
+    parser.add_argument("--folder_ckpt", type=str, help="The folder name for saving model parameters, located in the ./checkpoint directory")
     parser.add_argument("--hidden_size", type=int, default=64, help="Hidden size of Graph Neural Networks")
     parser.add_argument("--num_head", type=int, default=4, help="Number of heads for Graph Attention Networks")
     parser.add_argument("--lr", type=float, default=0.0005, help="Learning rate")
@@ -288,17 +293,24 @@ if __name__ == '__main__':
     parser.add_argument("--patience", type=int, default=30, help="Early stop patience. Model training stops when best validation correlation does not decrease for a consecutive ``patience`` epochs.")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--train_val_split", type=float, default=0.8, help="Proportion of training data")
-    # parser.add_argument("--use_pretrain", type=str, default='true', help="Whether to use pretrain model")
     parser.add_argument("--pretrain_model_path", type=str, default='./graph_pretrain', help="Path of checkpoint of pretrain model")
     parser.add_argument("--pretrain_file_name", type=str, default='ssgae_save.pt', help="File name of checkpoint of pretrain model")
-    # parser.add_argument("--label_loss", type=str, default='true', help="Whether use label loss")
     parser.add_argument("--lambda_loss", type=int, default=1, help="Weight of expression loss")
+    parser.add_argument("--num_sample_cell", type=int, default=-1, help="Number of cells selected to train model")
     parser.add_argument("--device", type=int, default=0, help="GPU number")
     parser.add_argument("--random_seed", type=int, default=2024, help="Random seed")
 
     args = parser.parse_args()
 
-    graph_dataset = load_graph_data(args.path_in, sample_graph=False)
+    if args.num_sample_cell > 0:
+        graph_dataset = load_graph_data(
+            args.path_in, random_seed=args.random_seed, sample_graph=True,
+            num_sample_cells=args.num_sample_cell
+        )
+    else:
+        graph_dataset = load_graph_data(
+            args.path_in, random_seed=args.random_seed, sample_graph=False
+        )
     train_device = args.device if torch.cuda.is_available() else torch.device("cpu")
     with open('./graph_pretrain/pretrain_conf.yaml', 'r') as file:
         dict_pretrain = yaml.load(file, Loader=yaml.FullLoader)
@@ -307,6 +319,7 @@ if __name__ == '__main__':
 
     trainer = FinetuneTrainerLabel(
         dataset=graph_dataset,
+        folder_ckpt=args.folder_ckpt,
         hidden_size=args.hidden_size,
         num_head=args.num_head,
         lr=args.lr,

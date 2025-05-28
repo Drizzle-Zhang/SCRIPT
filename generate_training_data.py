@@ -12,19 +12,23 @@ def generate_data(
         min_features=0,
         max_features=10e8,
         min_percent=0,
+        all_genes=0,
         num_gene=300
 ):
     # cortex
     time_start = time()
 
     # df_rna_cortex = pd.read_csv(file_rna, sep='\t', index_col=0)
-    df_rna_cortex = process_rna(file_rna, num_gene)
+    all_genes = True if all_genes > 0 else False
+    df_rna_cortex = process_rna(file_rna, num_gene, all_genes)
 
-    cell_aggregation = True if cell_aggregation > 0 else False
+    num_cell_aggregation = cell_aggregation
+    cell_aggregation = True if cell_aggregation > 1 else False
     hg19_to_hg38 = True if hg19_to_hg38 > 0 else False
     # normalization = True if normalization > 0 else False
     print(f"file_atac_in: {file_atac}, \nfile_rna_in: {file_rna}, \npath_out: {path_out}")
-    print(f"cell_aggregation: {cell_aggregation}, hg19_to_hg38: {hg19_to_hg38}")
+    print(f"cell_aggregation: {cell_aggregation}, hg19_to_hg38: {hg19_to_hg38}, "
+          f"use_all_genes: {all_genes}")
     if min_features < 0:
         min_features = None
     if max_features < 0:
@@ -32,11 +36,13 @@ def generate_data(
     prepare_model_input(
         path_out, file_atac, df_rna_cortex,
         min_features=min_features, max_features=max_features, min_percent=min_percent,
-        deepen_data=cell_aggregation, hg19tohg38=hg19_to_hg38
+        deepen_data=cell_aggregation, num_cell_aggregation=num_cell_aggregation,
+        hg19tohg38=hg19_to_hg38
     )
 
     time_end = time()
-    print(time_end - time_start)
+    # print(f"Runtime: {time_end - time_start}")
+    return
 
 
 if __name__ == '__main__':
@@ -45,12 +51,13 @@ if __name__ == '__main__':
     parser.add_argument("--file_atac", type=str, help="h5ad file path of scATAC-seq data")
     parser.add_argument("--file_rna", type=str, help="h5ad file path of scRNA-seq data")
     parser.add_argument("--path_out", type=str, help="output path")
-    parser.add_argument("--cell_aggregation", type=int, default=1, help="do cell aggregation")
+    parser.add_argument("--cell_aggregation", type=int, default=5, help="Improve data quality by aggregating N cells to one cell; -1 represents ")
     parser.add_argument("--hg19tohg38", type=int, default=0, help="transform hg19 to hg38")
     # parser.add_argument("--normalization", type=int, default=0, help="do normalization")
     parser.add_argument("--min_features", type=int, default=-1, help="min number of features (For QC)")
     parser.add_argument("--max_features", type=int, default=-1, help="max number of features (For QC)")
     parser.add_argument("--min_percent", type=float, default=0.05, help="min percent of features (For QC)")
+    parser.add_argument("--use_all_gene", type=int, default=0, help="use all genes in scRNA-seq data")
     parser.add_argument("--num_gene", type=int, default=300, help="number of marker genes per cell type")
     args = parser.parse_args()
     generate_data(
@@ -62,5 +69,6 @@ if __name__ == '__main__':
         min_features=args.min_features,
         max_features=args.max_features,
         min_percent=args.min_percent,
+        all_genes=args.use_all_gene,
         num_gene=args.num_gene
     )

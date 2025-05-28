@@ -7,9 +7,9 @@ class TrainerBase(object):
     Base class for all training class
     """
     def __init__(self, log_dir, sub_id=-1):
-        if not os.path.exists("checkpoints"):
-            os.mkdir("checkpoints")
-        self.ckpt_path = os.path.join("checkpoints", log_dir)
+        # if not os.path.exists("checkpoints"):
+        #     os.mkdir("checkpoints")
+        self.ckpt_path = os.path.join(log_dir)
         if not os.path.exists(self.ckpt_path):
             os.makedirs(self.ckpt_path)
 

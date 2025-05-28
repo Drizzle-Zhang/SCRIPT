@@ -62,7 +62,7 @@ def load_graph_gene(root_path, max_gene_idx, gene_first=False):
     return cre_node_list, edge_index_cre, graph
 
 
-def load_graph_data(root_path, sample_graph=False):
+def load_graph_data(root_path, random_seed, sample_graph=False, num_sample_cells=5000):
     """
     Load dataset pickle file
     Parameters
@@ -79,8 +79,9 @@ def load_graph_data(root_path, sample_graph=False):
     dataset.generate_data_list(rna_exp=True)
 
     if sample_graph:
+        random.seed(random_seed)
         random.shuffle(dataset.list_graph)
-        dataset.list_graph = dataset.list_graph[:10000]
+        dataset.list_graph = dataset.list_graph[:num_sample_cells]
 
     first_edge_index = torch.cat([dataset.list_graph[0].edge_index_cre[0],
                                   dataset.list_graph[0].edge_index[0]])

@@ -53,9 +53,13 @@ class Attribution(TrainerBase):
             pretrain_model=None,
             pretrain_model_path=None,
             finetune_model_path=None,
-            label_loss=True
+            label_loss=True,
+            folder_ckpt=None
     ):
-        super().__init__(f"{int(time.time())}")
+        if folder_ckpt is None:
+            super().__init__(f"{int(time.time())}")
+        else:
+            super().__init__(f"{folder_ckpt}")
         self.dataset = dataset
         self.path_out = path_out
         self.in_dim = 1
@@ -201,17 +205,33 @@ class Attribution(TrainerBase):
         print('-' * 10, whole_array_merge.shape, len(list_cell), len(sub_pairs), list_cell[0])
         df_merge = pd.DataFrame(whole_array_merge, index=list_cell, columns=sub_pairs)
 
+        edge_var = np.std(df_merge.to_numpy())
+        # df_edge_cortex_scale = (df_edge_cortex - edge_mean) / edge_var
+        df_merge_scale = df_merge / edge_var
+        df_merge_scale = np.tanh(df_merge_scale)
+
         file_weight = os.path.join(
-            self.path_out, "attribution_scores.csv"
+            self.path_out, "regulation_scores.csv"
+        )
+        file_weight_ct = os.path.join(
+            self.path_out, "regulation_scores_celltype.csv"
         )
         # df_merge.to_csv(file_weight, sep='\t')
 
-        # use datatable to save (faster)
-        df_merge.insert(loc=0, column='Cells', value=list_cell)
-        df_merge = dt.Frame(df_merge)
-        df_merge.to_csv(file_weight)
+        df_ct = df_merge_scale.copy()
+        df_ct['celltype'] = self.dataset.adata.obs.loc[df_merge_scale.index, 'celltype']
+        df_ct = df_ct.groupby('celltype').apply(lambda x: x.mean())
 
-        self.df_attr = df_merge
+        # use datatable to save (faster)
+        df_ct.insert(loc=0, column='Celltype', value=df_ct.index)
+        df_ct = dt.Frame(df_ct)
+        df_ct.to_csv(file_weight_ct)
+
+        df_merge_scale.insert(loc=0, column='Cell', value=list_cell)
+        df_merge_scale = dt.Frame(df_merge_scale)
+        df_merge_scale.to_csv(file_weight)
+
+        # self.df_attr = df_merge_scale
 
         return
 
@@ -228,7 +248,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    graph_dataset = load_graph_data(args.path_in, sample_graph=False)
     attr_device = args.device if torch.cuda.is_available() else torch.device("cpu")
     # pretrain config
     with open('./graph_pretrain/pretrain_conf.yaml', 'r') as file:
@@ -240,6 +259,16 @@ if __name__ == '__main__':
     with open(args.config_simulation, 'rb') as file:
         args_simulation = pickle.load(file)
 
+    if args_simulation.num_sample_cell > 0:
+        graph_dataset = load_graph_data(
+            args_simulation.path_in, random_seed=args_simulation.random_seed, sample_graph=True,
+            num_sample_cells=args_simulation.num_sample_cell
+        )
+    else:
+        graph_dataset = load_graph_data(
+            args_simulation.path_in, random_seed=args_simulation.random_seed, sample_graph=False
+        )
+
     class_attr = Attribution(
         dataset=graph_dataset,
         path_out=args.path_out,
@@ -248,7 +277,7 @@ if __name__ == '__main__':
         lr=args_simulation.lr,
         epoch=args_simulation.max_epoch,
         batch_size=args_simulation.batch_size,
-        train_val_split=0.6,
+        train_val_split=args_simulation.train_val_split,
         load_pretrain_emb=True,
         large_emb_init=False,
         device=attr_device,
@@ -257,7 +286,8 @@ if __name__ == '__main__':
         pretrain_model_path=os.path.join(
             args_simulation.pretrain_model_path, args_simulation.pretrain_file_name),
         finetune_model_path=args.model_simulation,
-        label_loss=True
+        label_loss=True,
+        folder_ckpt=args_simulation.folder_ckpt
     )
     save_args(args, class_attr.ckpt_path)
     class_attr.attribution_process()

@@ -479,7 +479,7 @@ class ATACDataset(object):
             label = adata_atac.obs.loc[one_cell, 'celltype']
             label_idx = torch.tensor([label_dict[label]], dtype=torch.int16)
             if rna_exp:
-                label_rna = adata_atac.obs.loc[one_cell, 'celltype_rna']
+                label_rna = adata_atac.obs.loc[one_cell, 'celltype']
                 label_exp = self.df_rna.loc[label_rna, self.list_gene_peak].tolist()
                 cell_data = Data(
                     x=tensor_merge[i_cell, :],
@@ -503,7 +503,7 @@ class ATACDataset(object):
         return
 
 
-def process_rna(file_rna, num_gene_percelltype):
+def process_rna(file_rna, num_gene_percelltype, all_genes):
     adata_rna = sc.read_h5ad(file_rna)
     # protein coding gene
     basepath = os.path.abspath(__file__)
@@ -513,20 +513,23 @@ def process_rna(file_rna, num_gene_percelltype):
     pretein_genes = df_gene_hg38.iloc[:, 2]
     sel_pretein_genes = sorted(list(set(pretein_genes.tolist()).intersection(adata_rna.var.index)))
     adata_rna_cosg = adata_rna[:, sel_pretein_genes].copy()
-    # find marker genes
-    cosg.cosg(adata_rna_cosg,
-              key_added='cosg',
-              mu=1,
-              remove_lowly_expressed=True,
-              expressed_pct=0.2,
-              n_genes_user=num_gene_percelltype,
-              use_raw=True,
-              groupby='celltype')
-    cosg_genes = []
-    for i in range(adata_rna_cosg.uns['cosg']['names'].shape[0]):
-        cosg_genes.extend(list(adata_rna_cosg.uns['cosg']['names'][i]))
-    cosg_genes = list(set(cosg_genes))
-    adata_rna = adata_rna[:, cosg_genes]
+    if not all_genes:
+        # find marker genes
+        cosg.cosg(adata_rna_cosg,
+                  key_added='cosg',
+                  mu=1,
+                  remove_lowly_expressed=True,
+                  expressed_pct=0.2,
+                  n_genes_user=num_gene_percelltype,
+                  use_raw=True,
+                  groupby='celltype')
+        cosg_genes = []
+        for i in range(adata_rna_cosg.uns['cosg']['names'].shape[0]):
+            cosg_genes.extend(list(adata_rna_cosg.uns['cosg']['names'][i]))
+        cosg_genes = list(set(cosg_genes))
+        adata_rna = adata_rna[:, cosg_genes]
+    else:
+        adata_rna = adata_rna_cosg
     df_rna = pd.DataFrame(adata_rna.X.toarray(),
                           index=adata_rna.obs.index, columns=adata_rna.var.index)
     df_rna_cell = df_rna
@@ -540,7 +543,8 @@ def process_rna(file_rna, num_gene_percelltype):
 def prepare_model_input(path_data_root: str, file_atac: str, df_rna_celltype: DataFrame,
                         min_features: Optional[float] = None, max_features: Optional[float] = None,
                         min_percent: Optional[float] = 0.05,
-                        hg19tohg38: bool = False, deepen_data: bool = True):
+                        hg19tohg38: bool = False,
+                        deepen_data: bool = True, num_cell_aggregation: int = 5):
     if not os.path.exists(path_data_root):
         os.mkdir(path_data_root)
 
@@ -565,9 +569,9 @@ def prepare_model_input(path_data_root: str, file_atac: str, df_rna_celltype: Da
                                  min_percent=min_percent)
     # dataset_ATAC.quality_control(min_features=3000, min_cells=5)
 
-    # deep atac
+    # deepen atac
     if deepen_data:
-        dataset_ATAC.deepen_atac(num_cell_merge=10)
+        dataset_ATAC.deepen_atac(num_cell_merge=num_cell_aggregation)
 
     # add RNA-seq data
     dataset_ATAC.df_rna = df_rna_celltype
@@ -575,7 +579,7 @@ def prepare_model_input(path_data_root: str, file_atac: str, df_rna_celltype: Da
     file_gene_hg38 = os.path.join(folder, 'data/genes.protein.tss.tsv')
     dataset_ATAC.add_promoter(file_gene_hg38, flank_proximal=2_000)
 
-    # Hi-C
+    # Empirical CRR evidence
     path_hic = os.path.join(folder, 'data')
     dataset_ATAC.build_graph(path_hic, sel_interaction='ALL')
 

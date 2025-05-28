@@ -425,3 +425,34 @@ class TBLogger(object):
 
     def finish(self):
         self.writer.close()
+
+
+def write_stringList_2File(fileName, stringList):
+    with open(fileName, 'w') as fp:
+        for item in stringList:
+            fp.write("%s\n" % item)
+
+
+def read_stringList_FromFile(fileName):
+    result_list = []
+    with open(fileName, 'r') as fp:
+        for line in fp:
+            result_list.append(line.strip())
+    return result_list
+
+
+
+class FileUtils(object):
+    def __init__(self):
+        super().__init__()
+    pass
+
+    @staticmethod
+    def makedir(dirs):
+        if not os.path.exists(dirs):
+            os.makedirs(dirs)
+
+    @staticmethod
+    def makefile(dirs, filename):
+        f = open(os.path.join(dirs, filename), "a")
+        f.close()
